@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafeGuard AI</title>
+<style>
+  :root{--bg:#eef2f4;--panel:#fff;--ink:#14232e;--mute:#5d707d;--line:#d3dde3;--teal:#0e7c86;--red:#c8312b;--amber:#b87a00;--ok:#2e7d4f}
+  @media (prefers-color-scheme:dark){:root{--bg:#0f1a21;--panel:#172630;--ink:#e6eef2;--mute:#8da1ae;--line:#26394599;--teal:#3fb8c4;--red:#ff6b62;--amber:#f0b429;--ok:#5cc58a}}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,sans-serif}
+  header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 20px;border-bottom:2px solid var(--teal);background:var(--panel)}
+  h1{font-size:18px;margin:0;letter-spacing:.2px} h2{font-size:15px;margin:0 0 10px}
+  main{display:grid;grid-template-columns:minmax(0,2fr) minmax(300px,1fr);gap:16px;padding:16px 20px}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  .cams{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px}
+  .view{aspect-ratio:16/9;background:#0b1217;border-radius:4px;overflow:hidden;display:grid;place-items:center;color:#8da1ae;font-size:13px}
+  .view img{width:100%;height:100%;object-fit:contain}
+  .row{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .badge{font-size:13px;color:var(--mute)} .badge b{color:var(--ink)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--mute);margin-right:6px}
+  .dot.on{background:var(--ok)} .dot.bad{background:var(--red)}
+  button{font:inherit;padding:6px 12px;border:1px solid var(--teal);background:transparent;color:var(--teal);border-radius:4px;cursor:pointer}
+  button:hover{background:var(--teal);color:#fff} button.danger{border-color:var(--red);color:var(--red)} button.danger:hover{background:var(--red);color:#fff}
+  button:focus-visible{outline:3px solid var(--amber);outline-offset:2px}
+  ul{list-style:none;margin:0;padding:0;max-height:70vh;overflow:auto}
+  li{padding:10px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:64px 1fr;gap:10px;align-items:start}
+  li img{width:64px;height:44px;object-fit:cover;border-radius:3px;background:#0b1217}
+  .lvl-alarm{color:var(--red);font-weight:600} .lvl-warning{color:var(--amber);font-weight:600}
+  .small{font-size:12.5px;color:var(--mute)} .empty{color:var(--mute);padding:8px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>SafeGuard AI &ndash; fall and drowning monitor</h1>
+  <div><button id="alertTest">Send test alert</button> <button id="sirenTest">Test siren</button> <button id="sirenOff" class="danger">Silence siren</button></div>
+</header>
+<main>
+  <div class="cams" id="cams"></div>
+  <section><h2>Recent events</h2><ul id="events"><li class="empty">No events yet.</li></ul></section>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const key = () => sessionStorage.getItem('key') || '';
+async function post(url){
+  let r = await fetch(url,{method:'POST',headers:{'x-api-key':key()}});
+  if(r.status===401){ const k=prompt('API key'); if(k){sessionStorage.setItem('key',k); r=await fetch(url,{method:'POST',headers:{'x-api-key':k}});} }
+  return r;
+}
+$('#alertTest').onclick=()=>post('/api/test-alert');
+$('#sirenTest').onclick=()=>post('/api/siren/on');
+$('#sirenOff').onclick=()=>post('/api/siren/off');
+let built=false;
+async function loadCams(){
+  const cams=await (await fetch('/api/cameras')).json();
+  if(!built){
+    $('#cams').innerHTML=cams.map(c=>`<section id="c-${c.id}"><h2>${c.name} <span class="small">(${c.mode==='land'?'fall detection':'pool safety'})</span></h2>
+      <div class="view"><span>Camera stopped</span></div>
+      <div class="row"><span class="badge" data-s></span><span><button data-a="start">Start</button> <button data-a="stop" class="danger">Stop</button></span></div></section>`).join('');
+    cams.forEach(c=>{document.querySelectorAll(`#c-${c.id} button`).forEach(b=>b.onclick=async()=>{await post(`/api/cameras/${c.id}/${b.dataset.a}`);setTimeout(loadCams,800)})});
+    built=true;
+  }
+  cams.forEach(c=>{
+    const el=$('#c-'+c.id), view=el.querySelector('.view');
+    const has=view.querySelector('img');
+    if(c.running&&!has) view.innerHTML=`<img src="/stream/${c.id}" alt="${c.name} live view">`;
+    if(!c.running&&has) view.innerHTML='<span>Camera stopped</span>';
+    const state=c.error?'bad':(c.running&&c.connected?'on':'');
+    el.querySelector('[data-s]').innerHTML=`<span class="dot ${state}"></span>${c.error?('Error: '+c.error):c.running?(c.connected?`<b>${c.fps}</b> analysed fps`:'Connecting to camera'):'Stopped'}`;
+  });
+}
+async function loadEvents(){
+  const ev=await (await fetch('/api/events?limit=30')).json();
+  $('#events').innerHTML=ev.length?ev.map(e=>`<li><img src="/snapshots/${e.snapshot}" alt="" loading="lazy"><div>
+    <div class="lvl-${e.level}">${e.type} ${e.level}</div><div>${e.detail}</div>
+    <div class="small">${e.camera} &middot; ${new Date(e.ts*1000).toLocaleString()} &middot; ${Math.round(e.confidence*100)}%</div></div></li>`).join(''):'<li class="empty">No events yet.</li>';
+}
+loadCams();loadEvents();setInterval(loadCams,3000);setInterval(loadEvents,3000);
+</script>
+</body>
+</html>

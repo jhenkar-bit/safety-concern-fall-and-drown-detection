@@ -1,0 +1,5 @@
+path: datasets/swimmers
+train: images/train
+val: images/val
+names:
+  0: swimmer

@@ -1,0 +1,60 @@
+server:
+  snapshots_dir: data/snapshots
+  db_path: data/events.db
+
+detection:
+  target_fps: 10            # frames analysed per second (not camera fps)
+  imgsz: 800                # 640 fast, 800 balanced, 960+ most accurate (slower)
+  conf: 0.3
+  device: "cpu"             # "cpu" or "0" for first GPU
+  pose_weights: yolo11m-pose.pt   # n < s < m < l: bigger is more accurate but slower. Use s if your PC is slow.
+  pool_weights: yolo11n.pt        # replace with weights/swimmer.pt after fine-tuning
+  pool_classes: [0]               # [0]=person for COCO weights; use null for custom swimmer model
+
+fall:
+  down_angle: 55            # torso angle from vertical (deg) counted as "lying"
+  up_angle: 35              # below this (and narrow box) counts as "upright"
+  still_motion: 0.25        # body-heights/sec below which person is "not moving"
+  confirm_s: 3.0            # must stay down + still this long -> alarm
+  candidate_timeout_s: 12
+  long_lie_s: 10            # found lying motionless this long without seeing the drop
+  still_pix: 0.08           # share of changed pixels inside the box below which a person counts as still
+  still_ratio: 0.6          # share of the confirm window that must be 'still'
+  upright_window_s: 4.0     # 'was standing' memory length
+  vanish_alarm: true        # a person who goes down and then disappears from view counts as a fall
+  vanish_confirm_s: 5       # how long they must stay gone before the alarm
+  drop_vy: 1.0              # body-heights/sec hip drop treated as "sudden"
+  use_lstm: false           # true after training weights/fall_lstm.pt
+  lstm_path: weights/fall_lstm.pt
+
+drowning:
+  window_s: 8
+  low_travel: 0.6           # body-lengths moved over window_s below this = "not progressing"
+  vertical_ratio: 1.15      # bbox h/w above this = upright/vertical body (camera dependent!)
+  low_motion: 0.03          # fraction of pixels changing inside bbox below this = motionless
+  vertical_alarm_s: 25
+  motionless_alarm_s: 15
+  submerge_alarm_s: 10
+  warn_at: 0.6
+  edge_margin_px: 40        # tracks lost this close to pool edge are treated as "exited"
+
+alerts:
+  cooldown_s: 60
+  siren_seconds: 30
+  siren_on_warning: false
+  local_siren: true         # also ring the siren through THIS PC's speakers
+  heartbeat_hour: 9         # daily 'still running' Telegram message at 09:00 (null = off)
+  offline_after_s: 90       # camera counts as offline after this long without video
+
+cameras:
+  - id: home1
+    name: Living room
+    source: "http://192.168.31.105:8080/video"      # set HOME_CAM_URL in .env (keeps the camera password out of this file)
+    mode: land
+    autostart: true
+  # - id: pool1
+  #   name: Pool camera
+  #   source: "${POOL_RTSP}"
+  #   mode: pool
+  #   pool_polygon: [[100,200],[1100,200],[1200,650],[50,650]]
+  #   autostart: true
